@@ -14,13 +14,6 @@ const Leads = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [cnpjSearch, setCnpjSearch] = useState("");
 
-  const leads = [
-    { id: "1", name: "Tech Solutions LTDA", cnpj: "12.345.678/0001-90", sector: "Tecnologia", temp: "hot", score: 92, status: "Primeiro Contato", phone: "+5511999999999" },
-    { id: "2", name: "Inovação Digital ME", cnpj: "98.765.432/0001-10", sector: "Marketing", temp: "hot", score: 88, status: "Em Andamento", phone: "+5511988888888" },
-    { id: "3", name: "Comércio XYZ", cnpj: "11.222.333/0001-44", sector: "Varejo", temp: "warm", score: 65, status: "Primeiro Contato", phone: "+5511977777777" },
-    { id: "4", name: "Serviços ABC", cnpj: "44.555.666/0001-77", sector: "Serviços", temp: "cold", score: 38, status: "Primeiro Contato", phone: "+5511966666666" },
-    { id: "5", name: "Indústria 4.0 S/A", cnpj: "22.333.444/0001-88", sector: "Indústria", temp: "hot", score: 85, status: "Aguardando Pagamento", phone: "+5511955555555" },
-  ];
 
   const toggleLead = (id: string) => {
     setSelectedLeads(prev =>
@@ -28,15 +21,56 @@ const Leads = () => {
     );
   };
 
-  const handleBuscarCNPJ = () => {
+  const [leads, setLeads] = useState([
+    { id: "1", name: "Tech Solutions LTDA", cnpj: "12.345.678/0001-90", sector: "Tecnologia", temp: "hot", score: 92, status: "Primeiro Contato", phone: "+5511999999999" },
+    { id: "2", name: "Inovação Digital ME", cnpj: "98.765.432/0001-10", sector: "Marketing", temp: "hot", score: 88, status: "Em Andamento", phone: "+5511988888888" },
+    { id: "3", name: "Comércio XYZ", cnpj: "11.222.333/0001-44", sector: "Varejo", temp: "warm", score: 65, status: "Primeiro Contato", phone: "+5511977777777" },
+    { id: "4", name: "Serviços ABC", cnpj: "44.555.666/0001-77", sector: "Serviços", temp: "cold", score: 38, status: "Primeiro Contato", phone: "+5511966666666" },
+    { id: "5", name: "Indústria 4.0 S/A", cnpj: "22.333.444/0001-88", sector: "Indústria", temp: "hot", score: 85, status: "Aguardando Pagamento", phone: "+5511955555555" },
+  ]);
+
+  const handleBuscarCNPJ = async () => {
     if (!cnpjSearch) {
       toast.error("Digite um CNPJ para buscar");
       return;
     }
-    toast.success("Buscando informações do CNPJ...");
-    setTimeout(() => {
-      toast.success("Lead adicionado com sucesso!");
-    }, 1500);
+    
+    const cleanCNPJ = cnpjSearch.replace(/\D/g, '');
+    if (cleanCNPJ.length !== 14) {
+      toast.error("CNPJ inválido. Digite 14 dígitos.");
+      return;
+    }
+
+    toast.loading("Buscando informações do CNPJ...");
+    
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCNPJ}`);
+      
+      if (!response.ok) {
+        toast.error("CNPJ não encontrado na base de dados");
+        return;
+      }
+
+      const data = await response.json();
+      
+      const newLead = {
+        id: Date.now().toString(),
+        name: data.razao_social || data.nome_fantasia || "Empresa sem nome",
+        cnpj: cnpjSearch,
+        sector: data.cnae_fiscal_descricao || "Não especificado",
+        temp: "warm" as const,
+        score: 50,
+        status: "Novo Lead",
+        phone: data.ddd_telefone_1 ? `+55${data.ddd_telefone_1}` : "+5500000000000"
+      };
+
+      setLeads(prev => [newLead, ...prev]);
+      toast.success(`Lead "${newLead.name}" adicionado com sucesso!`);
+      setCnpjSearch("");
+    } catch (error) {
+      console.error("Erro ao buscar CNPJ:", error);
+      toast.error("Erro ao buscar CNPJ. Tente novamente.");
+    }
   };
 
   const handleImportarCNPJ = (e: React.ChangeEvent<HTMLInputElement>) => {

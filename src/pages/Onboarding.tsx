@@ -38,10 +38,24 @@ const Onboarding = () => {
     if (step < 3) {
       setStep(step + 1);
     } else {
+      // Salvar configuração completa
+      const config = {
+        ...formData,
+        connectedChannels: formData.channels,
+        configuredAt: new Date().toISOString(),
+        isWhatsAppConnected: formData.channels.includes("whatsapp"),
+        isInstagramConnected: formData.channels.includes("instagram")
+      };
+      
       localStorage.setItem("onboardingComplete", "true");
-      localStorage.setItem("businessConfig", JSON.stringify(formData));
-      toast.success("Configuração concluída! Bem-vindo ao SaaSCapture");
-      navigate("/dashboard");
+      localStorage.setItem("businessConfig", JSON.stringify(config));
+      localStorage.setItem("connectedChannels", JSON.stringify(formData.channels));
+      
+      toast.success("Configuração concluída! Canais conectados com sucesso!");
+      
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 1000);
     }
   };
 
