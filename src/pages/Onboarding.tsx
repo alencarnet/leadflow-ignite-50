@@ -78,11 +78,21 @@ const Onboarding = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background effects */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-accent/10 pointer-events-none" />
+      <div className="absolute top-20 left-20 w-72 h-72 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-20 right-20 w-96 h-96 bg-accent/20 rounded-full blur-3xl pointer-events-none" />
+      
+      <div className="w-full max-w-2xl relative z-10 animate-fade-in">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            SaaSCapture
+          <div className="inline-block p-3 bg-primary/10 rounded-2xl mb-4">
+            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center">
+              <Building2 className="w-6 h-6 text-primary-foreground" />
+            </div>
+          </div>
+          <h1 className="text-4xl font-bold mb-2 text-foreground">
+            Bem-vindo ao <span className="text-primary">FluxoLead AI</span>
           </h1>
           <p className="text-muted-foreground">Configure sua experiência em 3 passos simples</p>
         </div>
@@ -100,14 +110,16 @@ const Onboarding = () => {
           ))}
         </div>
 
-        <Card>
+        <Card className="glass-card shadow-card">
           <CardHeader>
             <div className="flex items-center gap-3">
-              {step === 1 && <Building2 className="w-8 h-8 text-primary" />}
-              {step === 2 && <MessageSquare className="w-8 h-8 text-primary" />}
-              {step === 3 && <BarChart3 className="w-8 h-8 text-primary" />}
+              <div className="p-3 bg-primary/10 rounded-xl">
+                {step === 1 && <Building2 className="w-6 h-6 text-primary" />}
+                {step === 2 && <MessageSquare className="w-6 h-6 text-primary" />}
+                {step === 3 && <BarChart3 className="w-6 h-6 text-primary" />}
+              </div>
               <div>
-                <CardTitle>
+                <CardTitle className="text-foreground">
                   {step === 1 && "Informações do Negócio"}
                   {step === 2 && "Canais de Comunicação"}
                   {step === 3 && "Preferências do Dashboard"}
@@ -149,40 +161,58 @@ const Onboarding = () => {
             {step === 2 && (
               <div className="space-y-4">
                 {[
-                  { id: "whatsapp", label: "WhatsApp Business", icon: "💬" },
-                  { id: "instagram", label: "Instagram Direct", icon: "📸" }
+                  { id: "whatsapp", label: "WhatsApp Business", icon: "💬", description: "Conecte e gerencie conversas do WhatsApp" },
+                  { id: "instagram", label: "Instagram Direct", icon: "📸", description: "Integre mensagens diretas do Instagram" }
                 ].map((channel) => (
-                  <div key={channel.id} className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
-                    onClick={() => toggleChannel(channel.id)}>
+                  <div 
+                    key={channel.id} 
+                    className={`flex items-center space-x-3 p-5 border-2 rounded-xl cursor-pointer transition-all ${
+                      formData.channels.includes(channel.id)
+                        ? 'border-primary bg-primary/10 glow-effect'
+                        : 'border-border/50 hover:border-primary/50 hover:bg-muted/30'
+                    }`}
+                    onClick={() => toggleChannel(channel.id)}
+                  >
                     <Checkbox checked={formData.channels.includes(channel.id)} />
-                    <span className="text-2xl">{channel.icon}</span>
-                    <Label className="cursor-pointer flex-1">{channel.label}</Label>
+                    <span className="text-3xl">{channel.icon}</span>
+                    <div className="flex-1">
+                      <Label className="cursor-pointer font-semibold text-foreground">{channel.label}</Label>
+                      <p className="text-sm text-muted-foreground">{channel.description}</p>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
 
             {step === 3 && (
-              <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
                 {[
-                  "Total de Leads",
-                  "Leads Quentes",
-                  "Conversas Ativas",
-                  "Taxa de Conversão",
-                  "Mensagens Enviadas",
-                  "Clientes Ganhos"
+                  { name: "Total de Leads", icon: "👥" },
+                  { name: "Leads Quentes", icon: "🔥" },
+                  { name: "Conversas Ativas", icon: "💬" },
+                  { name: "Taxa de Conversão", icon: "📈" },
+                  { name: "Mensagens Enviadas", icon: "📨" },
+                  { name: "Clientes Ganhos", icon: "✅" }
                 ].map((metric) => (
-                  <div key={metric} className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
-                    onClick={() => toggleMetric(metric)}>
-                    <Checkbox checked={formData.dashboardMetrics.includes(metric)} />
-                    <Label className="cursor-pointer flex-1">{metric}</Label>
+                  <div 
+                    key={metric.name} 
+                    className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                      formData.dashboardMetrics.includes(metric.name)
+                        ? 'border-primary bg-primary/10 glow-effect'
+                        : 'border-border/50 hover:border-primary/50 hover:bg-muted/30'
+                    }`}
+                    onClick={() => toggleMetric(metric.name)}
+                  >
+                    <Checkbox checked={formData.dashboardMetrics.includes(metric.name)} />
+                    <span className="text-2xl">{metric.icon}</span>
+                    <Label className="cursor-pointer text-center text-sm font-medium">{metric.name}</Label>
                   </div>
                 ))}
               </div>
             )}
 
-            <Button onClick={handleNext} className="w-full" size="lg">
-              {step === 3 ? "Concluir Configuração" : "Próximo"}
+            <Button onClick={handleNext} className="w-full mt-6 bg-primary hover:bg-primary/90 text-primary-foreground glow-effect" size="lg">
+              {step === 3 ? "🚀 Começar Agora" : "Próximo Passo"}
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </CardContent>

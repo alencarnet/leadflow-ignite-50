@@ -26,24 +26,31 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-muted-foreground">Visão geral das suas métricas e atividades</p>
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold mb-2 text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground">Visão geral das suas métricas e atividades em tempo real</p>
+        </div>
+        <div className="glass-card px-4 py-2 rounded-lg">
+          <p className="text-xs text-muted-foreground">Atualizado agora</p>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {metrics.map((metric) => (
-          <Card key={metric.title}>
+        {metrics.map((metric, index) => (
+          <Card key={metric.title} className="glass-card shadow-card hover:shadow-glow transition-all duration-300 animate-slide-up" style={{ animationDelay: `${index * 50}ms` }}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{metric.title}</CardTitle>
-              <metric.icon className={`h-4 w-4 ${metric.color}`} />
+              <CardTitle className="text-sm font-medium text-muted-foreground">{metric.title}</CardTitle>
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <metric.icon className="h-5 w-5 text-primary" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{metric.value}</div>
-              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                <ArrowUp className="h-3 w-3 text-green-500" />
-                <span className="text-green-500">{metric.change}</span> vs mês anterior
+              <div className="text-3xl font-bold text-foreground">{metric.value}</div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-2">
+                <ArrowUp className="h-3 w-3 text-success" />
+                <span className="text-success font-medium">{metric.change}</span> vs mês anterior
               </p>
             </CardContent>
           </Card>
@@ -51,26 +58,31 @@ const Dashboard = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+        <Card className="glass-card shadow-card">
           <CardHeader>
-            <CardTitle>Leads Recentes</CardTitle>
+            <CardTitle className="text-foreground">Leads Recentes</CardTitle>
             <CardDescription>Últimos leads adicionados ao sistema</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {recentLeads.map((lead) => (
-                <div key={lead.cnpj} className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                <div key={lead.cnpj} className="flex items-center justify-between p-4 border border-border/50 rounded-xl hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group">
                   <div>
-                    <p className="font-medium">{lead.name}</p>
+                    <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{lead.name}</p>
                     <p className="text-sm text-muted-foreground">{lead.cnpj}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={lead.temp === "hot" ? "default" : lead.temp === "warm" ? "secondary" : "outline"}>
+                  <div className="flex items-center gap-3">
+                    <Badge 
+                      className={`${lead.temp === "hot" ? "bg-destructive/20 text-destructive border-destructive" : lead.temp === "warm" ? "bg-warning/20 text-warning border-warning" : "bg-info/20 text-info border-info"} border`}
+                    >
                       {lead.temp === "hot" && "🔥 Quente"}
                       {lead.temp === "warm" && "🌡️ Morno"}
                       {lead.temp === "cold" && "❄️ Frio"}
                     </Badge>
-                    <span className="text-sm font-semibold">{lead.score}</span>
+                    <div className="text-center">
+                      <p className="text-lg font-bold text-primary">{lead.score}</p>
+                      <p className="text-xs text-muted-foreground">score</p>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -78,22 +90,22 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card shadow-card">
           <CardHeader>
-            <CardTitle>Conversas Recentes</CardTitle>
+            <CardTitle className="text-foreground">Conversas Recentes</CardTitle>
             <CardDescription>Últimas interações com leads</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {recentConversations.map((conv, idx) => (
-                <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                  <div className="text-2xl">
+                <div key={idx} className="flex items-start gap-3 p-4 border border-border/50 rounded-xl hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group">
+                  <div className="text-3xl flex-shrink-0">
                     {conv.channel === "whatsapp" ? "💬" : "📸"}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <p className="font-medium">{conv.lead}</p>
-                      <span className="text-xs text-muted-foreground">{conv.time}</span>
+                      <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{conv.lead}</p>
+                      <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">{conv.time}</span>
                     </div>
                     <p className="text-sm text-muted-foreground truncate">{conv.message}</p>
                   </div>

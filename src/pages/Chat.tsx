@@ -67,14 +67,24 @@ const Chat = () => {
   const selectedConv = conversations.find(c => c.id === selectedConversation);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Chat Omnichannel</h1>
-        <p className="text-muted-foreground">Centralize todas as suas conversas em um só lugar</p>
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold mb-2 text-foreground">Chat Omnichannel</h1>
+          <p className="text-muted-foreground">Centralize WhatsApp e Instagram em um só lugar</p>
+        </div>
+        <div className="flex gap-2">
+          <Badge className="bg-success/20 text-success border-success">
+            {conversations.filter(c => c.online).length} Online
+          </Badge>
+          <Badge className="bg-primary/20 text-primary border-primary">
+            {conversations.reduce((acc, c) => acc + c.unread, 0)} Não lidas
+          </Badge>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[calc(100vh-220px)]">
-        <Card className="md:col-span-1">
+        <Card className="md:col-span-1 glass-card shadow-card">
           <CardHeader>
             <CardTitle className="text-base">Conversas</CardTitle>
             <div className="relative">
@@ -115,42 +125,47 @@ const Chat = () => {
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-2 flex flex-col">
-          <CardHeader className="border-b">
+        <Card className="md:col-span-2 flex flex-col glass-card shadow-card">
+          <CardHeader className="border-b border-border/50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="text-2xl">
+                <div className="p-2 bg-primary/10 rounded-xl text-2xl">
                   {selectedConv?.channel === "whatsapp" ? "💬" : "📸"}
                 </div>
                 <div>
-                  <CardTitle className="text-base">{selectedConv?.lead}</CardTitle>
+                  <CardTitle className="text-base text-foreground">{selectedConv?.lead}</CardTitle>
                   <CardDescription className="flex items-center gap-2">
                     {selectedConv?.online && (
                       <>
-                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                        <span>Online</span>
+                        <span className="w-2 h-2 bg-success rounded-full animate-pulse"></span>
+                        <span className="text-success">Online agora</span>
                       </>
                     )}
-                    {!selectedConv?.online && <span className="text-muted-foreground">Offline</span>}
+                    {!selectedConv?.online && (
+                      <>
+                        <span className="w-2 h-2 bg-muted-foreground rounded-full"></span>
+                        <span className="text-muted-foreground">Offline</span>
+                      </>
+                    )}
                   </CardDescription>
                 </div>
               </div>
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" className="glass-button">
                 <MoreVertical className="w-4 h-4" />
               </Button>
             </div>
           </CardHeader>
 
-          <ScrollArea className="flex-1 p-4">
+          <ScrollArea className="flex-1 p-6 bg-background/50">
             <div className="space-y-4">
               {messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}
                 >
-                  <div className={`max-w-[70%] ${msg.from === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'} rounded-lg p-3`}>
-                    <p className="text-sm">{msg.text}</p>
-                    <p className={`text-xs mt-1 ${msg.from === 'user' ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                  <div className={`max-w-[70%] ${msg.from === 'user' ? 'bg-primary text-primary-foreground shadow-glow' : 'bg-card border border-border/50'} rounded-2xl px-4 py-3`}>
+                    <p className={`text-sm ${msg.from === 'user' ? 'text-primary-foreground' : 'text-foreground'}`}>{msg.text}</p>
+                    <p className={`text-xs mt-2 ${msg.from === 'user' ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                       {msg.time}
                     </p>
                   </div>
@@ -159,15 +174,16 @@ const Chat = () => {
             </div>
           </ScrollArea>
 
-          <CardContent className="border-t p-4">
+          <CardContent className="border-t border-border/50 p-4">
             <div className="flex gap-2">
               <Input
                 placeholder="Digite sua mensagem..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                className="bg-muted/30"
               />
-              <Button onClick={handleSendMessage}>
+              <Button onClick={handleSendMessage} className="bg-primary hover:bg-primary/90 glow-effect">
                 <Send className="w-4 h-4" />
               </Button>
             </div>

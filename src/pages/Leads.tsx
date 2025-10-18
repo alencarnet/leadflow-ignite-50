@@ -98,37 +98,39 @@ const Leads = () => {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Gerenciamento de Leads</h1>
-          <p className="text-muted-foreground">Gerencie seus leads e prospecções</p>
+          <h1 className="text-3xl font-bold mb-2 text-foreground">Gerenciamento de Leads</h1>
+          <p className="text-muted-foreground">Gerencie, qualifique e converta seus leads com IA</p>
         </div>
         <div className="flex gap-2">
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" className="glass-button">
                 <Search className="w-4 h-4 mr-2" />
                 Buscar CNPJ
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="glass-card">
               <DialogHeader>
-                <DialogTitle>Buscar CNPJ</DialogTitle>
-                <DialogDescription>Digite o CNPJ para buscar informações da empresa</DialogDescription>
+                <DialogTitle className="text-foreground">Buscar CNPJ</DialogTitle>
+                <DialogDescription>Digite o CNPJ para buscar informações da empresa na Receita Federal</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>CNPJ</Label>
+                  <Label className="text-foreground">CNPJ</Label>
                   <Input
                     placeholder="00.000.000/0000-00"
                     value={cnpjSearch}
                     onChange={(e) => setCnpjSearch(e.target.value)}
+                    className="mt-2"
                   />
+                  <p className="text-xs text-muted-foreground mt-2">Busca automática via BrasilAPI</p>
                 </div>
-                <Button onClick={handleBuscarCNPJ} className="w-full">
+                <Button onClick={handleBuscarCNPJ} className="w-full bg-primary hover:bg-primary/90 glow-effect">
                   <Search className="w-4 h-4 mr-2" />
-                  Buscar
+                  Buscar e Adicionar
                 </Button>
               </div>
             </DialogContent>
@@ -136,15 +138,15 @@ const Leads = () => {
 
           <Dialog>
             <DialogTrigger asChild>
-              <Button>
+              <Button className="bg-primary hover:bg-primary/90 glow-effect">
                 <Upload className="w-4 h-4 mr-2" />
                 Importar CNPJ
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="glass-card">
               <DialogHeader>
-                <DialogTitle>Importar CNPJs</DialogTitle>
-                <DialogDescription>Faça upload de um arquivo CSV ou Excel com os CNPJs</DialogDescription>
+                <DialogTitle className="text-foreground">Importar CNPJs em Massa</DialogTitle>
+                <DialogDescription>Faça upload de um arquivo CSV ou Excel com os CNPJs para importação automática</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer">
@@ -169,15 +171,15 @@ const Leads = () => {
         </div>
       </div>
 
-      <Card>
+      <Card className="glass-card shadow-card">
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <CardTitle>Lista de Leads</CardTitle>
-              <CardDescription>{filteredLeads.length} leads encontrados</CardDescription>
+              <CardTitle className="text-foreground">Lista de Leads</CardTitle>
+              <CardDescription>{filteredLeads.length} leads encontrados • {selectedLeads.length} selecionados</CardDescription>
             </div>
             {selectedLeads.length > 0 && (
-              <Button onClick={handleSendWhatsApp}>
+              <Button onClick={handleSendWhatsApp} className="bg-success hover:bg-success/90 glow-effect">
                 <MessageCircle className="w-4 h-4 mr-2" />
                 Enviar WhatsApp ({selectedLeads.length})
               </Button>
@@ -185,63 +187,75 @@ const Leads = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 flex gap-2">
+          <div className="mb-6 flex flex-col md:flex-row gap-2">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nome, CNPJ ou setor..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 bg-muted/30"
               />
             </div>
-            <Button variant="outline">
+            <Button variant="outline" className="glass-button">
               <Filter className="w-4 h-4 mr-2" />
               Filtros
             </Button>
-            <Button variant="outline">
+            <Button variant="outline" className="glass-button">
               <Download className="w-4 h-4 mr-2" />
               Exportar
             </Button>
           </div>
 
-          <div className="space-y-2">
-            {filteredLeads.map((lead) => (
+          <div className="space-y-3">
+            {filteredLeads.map((lead, index) => (
               <div
                 key={lead.id}
-                className="flex items-center gap-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-4 p-5 border border-border/50 rounded-xl hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group animate-slide-up"
+                style={{ animationDelay: `${index * 30}ms` }}
               >
                 <Checkbox
                   checked={selectedLeads.includes(lead.id)}
                   onCheckedChange={() => toggleLead(lead.id)}
+                  className="flex-shrink-0"
                 />
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-4">
                   <div>
-                    <p className="font-medium">{lead.name}</p>
+                    <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{lead.name}</p>
                     <p className="text-sm text-muted-foreground">{lead.cnpj}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Setor</p>
-                    <p className="text-sm text-muted-foreground">{lead.sector}</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Setor</p>
+                    <p className="text-sm text-foreground">{lead.sector}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Qualificação</p>
-                    <Badge variant={lead.temp === "hot" ? "default" : lead.temp === "warm" ? "secondary" : "outline"}>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Qualificação</p>
+                    <Badge 
+                      className={`${lead.temp === "hot" ? "bg-destructive/20 text-destructive border-destructive" : lead.temp === "warm" ? "bg-warning/20 text-warning border-warning" : "bg-info/20 text-info border-info"} border`}
+                    >
                       {lead.temp === "hot" && "🔥 Quente"}
                       {lead.temp === "warm" && "🌡️ Morno"}
                       {lead.temp === "cold" && "❄️ Frio"}
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Score</p>
-                    <p className="text-sm font-semibold">{lead.score}/100</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Score AI</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-muted rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full ${lead.score >= 80 ? "bg-destructive" : lead.score >= 50 ? "bg-warning" : "bg-info"}`}
+                          style={{ width: `${lead.score}%` }}
+                        />
+                      </div>
+                      <p className="text-sm font-bold text-primary">{lead.score}</p>
+                    </div>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Status</p>
-                    <p className="text-sm text-muted-foreground">{lead.status}</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Status</p>
+                    <p className="text-sm text-foreground">{lead.status}</p>
                   </div>
                 </div>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" className="glass-button flex-shrink-0">
                   <MessageCircle className="w-4 h-4" />
                 </Button>
               </div>
