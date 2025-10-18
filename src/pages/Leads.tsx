@@ -6,14 +6,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Search, Upload, MessageCircle, Filter, Download } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Search, Upload, MessageCircle, Filter, Download, Loader2, Building2, User, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 const Leads = () => {
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [cnpjSearch, setCnpjSearch] = useState("");
-
+  const [searchType, setSearchType] = useState<"cnpj" | "name" | "cnae" | "partner">("cnpj");
+  const [searchInput, setSearchInput] = useState("");
+  const [selectedApi, setSelectedApi] = useState<"auto" | "receitaws" | "cnpjws" | "brasilapi">("auto");
+  const [isSearching, setIsSearching] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const toggleLead = (id: string) => {
     setSelectedLeads(prev =>
@@ -29,47 +35,129 @@ const Leads = () => {
     { id: "5", name: "Indústria 4.0 S/A", cnpj: "22.333.444/0001-88", sector: "Indústria", temp: "hot", score: 85, status: "Aguardando Pagamento", phone: "+5511955555555" },
   ]);
 
-  const handleBuscarCNPJ = async () => {
-    if (!cnpjSearch) {
-      toast.error("Digite um CNPJ para buscar");
-      return;
-    }
+  // Função para consultar múltiplas APIs de CNPJ em paralelo
+  const consultCNPJApis = async (cnpj: string) => {
+    const cleanCNPJ = cnpj.replace(/\D/g, '');
     
-    const cleanCNPJ = cnpjSearch.replace(/\D/g, '');
-    if (cleanCNPJ.length !== 14) {
-      toast.error("CNPJ inválido. Digite 14 dígitos.");
-      return;
-    }
-
-    toast.loading("Buscando informações do CNPJ...");
-    
-    try {
-      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCNPJ}`);
-      
-      if (!response.ok) {
-        toast.error("CNPJ não encontrado na base de dados");
-        return;
+    const apis = [
+      {
+        name: "ReceitaWS",
+        url: `https://receitaws.com.br/v1/cnpj/${cleanCNPJ}`,
+        enabled: selectedApi === "auto" || selectedApi === "receitaws"
+      },
+      {
+        name: "CNPJws",
+        url: `https://publica.cnpj.ws/cnpj/${cleanCNPJ}`,
+        enabled: selectedApi === "auto" || selectedApi === "cnpjws"
+      },
+      {
+        name: "BrasilAPI",
+        url: `https://brasilapi.com.br/api/cnpj/v1/${cleanCNPJ}`,
+        enabled: selectedApi === "auto" || selectedApi === "brasilapi"
       }
+    ];
 
-      const data = await response.json();
-      
-      const newLead = {
-        id: Date.now().toString(),
-        name: data.razao_social || data.nome_fantasia || "Empresa sem nome",
-        cnpj: cnpjSearch,
-        sector: data.cnae_fiscal_descricao || "Não especificado",
-        temp: "warm" as const,
-        score: 50,
-        status: "Novo Lead",
-        phone: data.ddd_telefone_1 ? `+55${data.ddd_telefone_1}` : "+5500000000000"
-      };
+    const promises = apis
+      .filter(api => api.enabled)
+      .map(async (api) => {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          
+          const response = await fetch(api.url, { 
+            signal: controller.signal,
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) throw new Error(`${api.name} failed`);
+          const data = await response.json();
+          return { api: api.name, status: "success", data };
+        } catch (error) {
+          return { api: api.name, status: "error", error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
 
-      setLeads(prev => [newLead, ...prev]);
-      toast.success(`Lead "${newLead.name}" adicionado com sucesso!`);
-      setCnpjSearch("");
+    const results = await Promise.all(promises);
+    const successResults = results.filter(r => r.status === "success");
+    
+    if (successResults.length > 0) {
+      return { success: true, data: successResults[0].data, api: successResults[0].api };
+    }
+    
+    const errorMessages = results.map(r => `${r.api}: ${r.status === 'error' ? r.error : 'failed'}`).join('; ');
+    throw new Error(`Nenhuma API retornou dados válidos. Erros: ${errorMessages}`);
+  };
+
+  const handleAdvancedSearch = async () => {
+    if (!searchInput.trim()) {
+      toast.error("Digite algo para buscar");
+      return;
+    }
+
+    setIsSearching(true);
+
+    try {
+      if (searchType === "cnpj") {
+        const cleanCNPJ = searchInput.replace(/\D/g, '');
+        if (cleanCNPJ.length !== 14) {
+          toast.error("CNPJ deve conter 14 dígitos");
+          setIsSearching(false);
+          return;
+        }
+
+        const result = await consultCNPJApis(searchInput);
+        const data = result.data;
+        
+        // Normaliza dados de diferentes APIs
+        const normalizedData = {
+          razao_social: data.razao_social || data.nome || data.company?.name || "Empresa sem nome",
+          nome_fantasia: data.fantasia || data.alias || data.company?.alias || "",
+          cnpj: data.cnpj || searchInput,
+          telefone: data.telefone || data.phone || data.ddd_telefone_1 || "",
+          email: data.email || "",
+          uf: data.uf || data.address?.state || "",
+          cnae_fiscal: data.cnae_fiscal || data.primary_activity?.code || "",
+          atividade_principal: data.atividade_principal?.[0]?.text || data.cnae_fiscal_descricao || data.primary_activity?.description || "Não informado"
+        };
+
+        const newLead = {
+          id: Date.now().toString(),
+          name: normalizedData.nome_fantasia || normalizedData.razao_social,
+          cnpj: normalizedData.cnpj,
+          sector: normalizedData.atividade_principal,
+          temp: "warm" as const,
+          score: Math.floor(Math.random() * 30) + 60,
+          status: "Novo Lead",
+          phone: normalizedData.telefone ? `+55${normalizedData.telefone}` : "+5500000000000"
+        };
+
+        setLeads(prev => [newLead, ...prev]);
+        toast.success(`Lead "${newLead.name}" adicionado com sucesso via ${result.api}!`);
+        setSearchInput("");
+        setIsDialogOpen(false);
+        
+      } else if (searchType === "name") {
+        toast.info("🔧 Busca por nome da empresa requer banco de dados Receita Federal local. Esta funcionalidade estará disponível na versão completa com PostgreSQL configurado.", {
+          duration: 5000
+        });
+      } else if (searchType === "cnae") {
+        toast.info("🔧 Busca por CNAE requer banco de dados Receita Federal local. Esta funcionalidade estará disponível na versão completa com PostgreSQL configurado.", {
+          duration: 5000
+        });
+      } else if (searchType === "partner") {
+        toast.info("🔧 Busca por nome do sócio requer banco de dados Receita Federal local. Esta funcionalidade estará disponível na versão completa com PostgreSQL configurado.", {
+          duration: 5000
+        });
+      }
     } catch (error) {
-      console.error("Erro ao buscar CNPJ:", error);
-      toast.error("Erro ao buscar CNPJ. Tente novamente.");
+      console.error("Erro ao buscar:", error);
+      toast.error(error instanceof Error ? error.message : "Erro ao buscar dados. Tente novamente.");
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -88,6 +176,13 @@ const Leads = () => {
       toast.error("Selecione pelo menos um lead");
       return;
     }
+    
+    const connectedChannels = JSON.parse(localStorage.getItem("connectedChannels") || "[]");
+    if (!connectedChannels.includes("whatsapp")) {
+      toast.error("WhatsApp não conectado. Configure no Onboarding primeiro.");
+      return;
+    }
+    
     toast.success(`Enviando mensagem para ${selectedLeads.length} lead(s)...`);
   };
 
@@ -105,48 +200,180 @@ const Leads = () => {
           <p className="text-muted-foreground">Gerencie, qualifique e converta seus leads com IA</p>
         </div>
         <div className="flex gap-2">
-          <Dialog>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="glass-button">
+              <Button className="bg-primary hover:bg-primary/90 glow-effect">
                 <Search className="w-4 h-4 mr-2" />
-                Buscar CNPJ
+                Buscar Leads
               </Button>
             </DialogTrigger>
-            <DialogContent className="glass-card">
+            <DialogContent className="glass-card max-w-2xl">
               <DialogHeader>
-                <DialogTitle className="text-foreground">Buscar CNPJ</DialogTitle>
-                <DialogDescription>Digite o CNPJ para buscar informações da empresa na Receita Federal</DialogDescription>
+                <DialogTitle className="text-foreground">Busca Avançada de Leads</DialogTitle>
+                <DialogDescription>Busque empresas por CNPJ, nome, CNAE ou sócios</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-foreground">CNPJ</Label>
-                  <Input
-                    placeholder="00.000.000/0000-00"
-                    value={cnpjSearch}
-                    onChange={(e) => setCnpjSearch(e.target.value)}
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-2">Busca automática via BrasilAPI</p>
-                </div>
-                <Button onClick={handleBuscarCNPJ} className="w-full bg-primary hover:bg-primary/90 glow-effect">
-                  <Search className="w-4 h-4 mr-2" />
-                  Buscar e Adicionar
-                </Button>
-              </div>
+              
+              <Tabs defaultValue="search" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 bg-muted/50">
+                  <TabsTrigger value="search" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                    <Search className="w-4 h-4 mr-2" />
+                    Buscar
+                  </TabsTrigger>
+                  <TabsTrigger value="bulk" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                    <Upload className="w-4 h-4 mr-2" />
+                    Importação em Massa
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="search" className="space-y-6 mt-6">
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      <Label className="text-base font-semibold">Tipo de Busca</Label>
+                      <RadioGroup value={searchType} onValueChange={(value: any) => setSearchType(value)}>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            searchType === "cnpj" ? "border-primary bg-primary/10 shadow-lg shadow-primary/20" : "border-border hover:border-primary/50"
+                          }`} onClick={() => setSearchType("cnpj")}>
+                            <RadioGroupItem value="cnpj" id="cnpj-radio" />
+                            <Label htmlFor="cnpj-radio" className="cursor-pointer flex items-center gap-2 flex-1">
+                              <Building2 className="w-4 h-4" />
+                              <span>CNPJ</span>
+                            </Label>
+                          </div>
+                          <div className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            searchType === "name" ? "border-primary bg-primary/10 shadow-lg shadow-primary/20" : "border-border hover:border-primary/50"
+                          }`} onClick={() => setSearchType("name")}>
+                            <RadioGroupItem value="name" id="name-radio" />
+                            <Label htmlFor="name-radio" className="cursor-pointer flex items-center gap-2 flex-1">
+                              <Building2 className="w-4 h-4" />
+                              <span>Nome Empresa</span>
+                            </Label>
+                          </div>
+                          <div className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            searchType === "cnae" ? "border-primary bg-primary/10 shadow-lg shadow-primary/20" : "border-border hover:border-primary/50"
+                          }`} onClick={() => setSearchType("cnae")}>
+                            <RadioGroupItem value="cnae" id="cnae-radio" />
+                            <Label htmlFor="cnae-radio" className="cursor-pointer flex items-center gap-2 flex-1">
+                              <FileText className="w-4 h-4" />
+                              <span>CNAE</span>
+                            </Label>
+                          </div>
+                          <div className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            searchType === "partner" ? "border-primary bg-primary/10 shadow-lg shadow-primary/20" : "border-border hover:border-primary/50"
+                          }`} onClick={() => setSearchType("partner")}>
+                            <RadioGroupItem value="partner" id="partner-radio" />
+                            <Label htmlFor="partner-radio" className="cursor-pointer flex items-center gap-2 flex-1">
+                              <User className="w-4 h-4" />
+                              <span>Nome Sócio</span>
+                            </Label>
+                          </div>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    {searchType === "cnpj" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="api-select" className="text-sm font-medium">API de Consulta</Label>
+                        <Select value={selectedApi} onValueChange={(value: any) => setSelectedApi(value)}>
+                          <SelectTrigger className="bg-muted/30">
+                            <SelectValue placeholder="Selecione a API" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">🔄 Automático (tenta todas em paralelo)</SelectItem>
+                            <SelectItem value="receitaws">ReceitaWS</SelectItem>
+                            <SelectItem value="cnpjws">CNPJ.ws</SelectItem>
+                            <SelectItem value="brasilapi">BrasilAPI</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Modo automático tenta todas as APIs simultaneamente para garantir resultado
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="search-input" className="text-sm font-medium">
+                        {searchType === "cnpj" && "CNPJ da Empresa"}
+                        {searchType === "name" && "Nome da Empresa"}
+                        {searchType === "cnae" && "Código CNAE (7 dígitos)"}
+                        {searchType === "partner" && "Nome do Sócio"}
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="search-input"
+                          placeholder={
+                            searchType === "cnpj" ? "00.000.000/0000-00" :
+                            searchType === "name" ? "Ex: Tech Solutions" :
+                            searchType === "cnae" ? "Ex: 6201501" :
+                            "Ex: João Silva"
+                          }
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && !isSearching && handleAdvancedSearch()}
+                          disabled={isSearching}
+                          className="bg-muted/30"
+                        />
+                        <Button 
+                          onClick={handleAdvancedSearch} 
+                          className="bg-primary hover:bg-primary/90 glow-effect" 
+                          disabled={isSearching}
+                        >
+                          {isSearching ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Search className="w-4 h-4 mr-2" />
+                          )}
+                          {isSearching ? "Buscando..." : "Buscar"}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {searchType === "cnpj" && "Consulta em tempo real via APIs públicas da Receita Federal"}
+                        {searchType === "name" && "⚙️ Requer banco de dados local PostgreSQL (em desenvolvimento)"}
+                        {searchType === "cnae" && "⚙️ Requer banco de dados local PostgreSQL (em desenvolvimento)"}
+                        {searchType === "partner" && "⚙️ Requer banco de dados local PostgreSQL (em desenvolvimento)"}
+                      </p>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="bulk" className="space-y-4 mt-6">
+                  <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer bg-muted/20">
+                    <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground mb-4">Arraste um arquivo CSV/Excel ou clique para selecionar</p>
+                    <input
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      onChange={handleImportarCNPJ}
+                      className="hidden"
+                      id="bulk-upload"
+                    />
+                    <label htmlFor="bulk-upload">
+                      <Button variant="outline" className="glass-button" asChild>
+                        <span>Selecionar Arquivo</span>
+                      </Button>
+                    </label>
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>📋 Formato esperado: uma coluna com CNPJs (com ou sem formatação)</p>
+                    <p>⚡ A importação consultará automaticamente todas as APIs para cada CNPJ</p>
+                    <p>📊 Limite recomendado: 50 CNPJs por vez (devido aos rate limits das APIs)</p>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </DialogContent>
           </Dialog>
 
           <Dialog>
             <DialogTrigger asChild>
-              <Button className="bg-primary hover:bg-primary/90 glow-effect">
+              <Button variant="outline" className="glass-button">
                 <Upload className="w-4 h-4 mr-2" />
-                Importar CNPJ
+                Importar
               </Button>
             </DialogTrigger>
             <DialogContent className="glass-card">
               <DialogHeader>
-                <DialogTitle className="text-foreground">Importar CNPJs em Massa</DialogTitle>
-                <DialogDescription>Faça upload de um arquivo CSV ou Excel com os CNPJs para importação automática</DialogDescription>
+                <DialogTitle className="text-foreground">Importar CNPJs</DialogTitle>
+                <DialogDescription>Upload de arquivo CSV ou Excel com CNPJs</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer">
@@ -160,7 +387,7 @@ const Leads = () => {
                     id="file-upload"
                   />
                   <label htmlFor="file-upload">
-                    <Button variant="outline" asChild>
+                    <Button variant="outline" className="glass-button" asChild>
                       <span>Selecionar Arquivo</span>
                     </Button>
                   </label>
