@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,87 +14,97 @@ serve(async (req) => {
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) {
-      throw new Error('Unauthorized');
+    const authHeader = req.headers.get('Authorization')!;
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+
+    if (authError || !user) {
+      throw new Error('Não autorizado');
     }
 
-    const { action, channelId, phone_number } = await req.json();
+    const { phone } = await req.json();
 
-    console.log(`WhatsApp action: ${action} for user: ${user.id}`);
+    console.log(`Iniciando conexão WhatsApp para usuário ${user.id}, phone: ${phone}`);
 
-    if (action === 'init') {
-      // Inicializar nova sessão WhatsApp
-      const qrCode = `whatsapp-qr-${Date.now()}`; // Mock QR code - em produção usar Baileys
-      
-      const { data: channel, error } = await supabaseClient
+    // Gerar QR Code simulado (em produção, usar Baileys)
+    const qrCodeSVG = `data:image/svg+xml;base64,${btoa(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+        <rect width="200" height="200" fill="white"/>
+        <text x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="14" fill="black">
+          QR Code WhatsApp
+        </text>
+        <text x="50%" y="60%" text-anchor="middle" dy=".3em" font-size="12" fill="gray">
+          ${phone}
+        </text>
+      </svg>
+    `)}`;
+
+    // Criar ou atualizar canal no banco
+    const { data: existingChannel } = await supabaseClient
+      .from('connected_channels')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('channel_type', 'whatsapp')
+      .eq('phone_number', phone)
+      .maybeSingle();
+
+    if (existingChannel) {
+      await supabaseClient
+        .from('connected_channels')
+        .update({
+          status: 'connecting',
+          qr_code: qrCodeSVG,
+        })
+        .eq('id', existingChannel.id);
+    } else {
+      await supabaseClient
         .from('connected_channels')
         .insert({
           user_id: user.id,
           channel_type: 'whatsapp',
-          phone_number,
+          phone_number: phone,
           status: 'connecting',
-          qr_code: qrCode,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          qrCode,
-          channelId: channel.id 
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+          qr_code: qrCodeSVG,
+        });
     }
 
-    if (action === 'check_status') {
+    // Simular conexão após 5 segundos
+    setTimeout(async () => {
       const { data: channel } = await supabaseClient
         .from('connected_channels')
         .select('*')
-        .eq('id', channelId)
-        .single();
+        .eq('user_id', user.id)
+        .eq('channel_type', 'whatsapp')
+        .eq('phone_number', phone)
+        .maybeSingle();
 
-      return new Response(
-        JSON.stringify({ success: true, channel }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+      if (channel) {
+        await supabaseClient
+          .from('connected_channels')
+          .update({
+            status: 'connected',
+            qr_code: null,
+            last_connected_at: new Date().toISOString(),
+          })
+          .eq('id', channel.id);
 
-    if (action === 'disconnect') {
-      await supabaseClient
-        .from('connected_channels')
-        .update({ status: 'disconnected', qr_code: null })
-        .eq('id', channelId)
-        .eq('user_id', user.id);
-
-      return new Response(
-        JSON.stringify({ success: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    throw new Error('Invalid action');
-  } catch (error) {
-    console.error('Error in whatsapp-connect:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { 
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        console.log(`WhatsApp conectado para ${phone}`);
       }
+    }, 5000);
+
+    return new Response(
+      JSON.stringify({ success: true, qr_code: qrCodeSVG }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('Erro na conexão WhatsApp:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

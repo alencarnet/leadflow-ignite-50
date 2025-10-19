@@ -1,323 +1,356 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { MessageCircle, Instagram, Loader2, QrCode, CheckCircle2, XCircle } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Loader2, Phone, Instagram, QrCode, CheckCircle2, XCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-interface Channel {
+interface ConnectedChannel {
   id: string;
-  channel_type: 'whatsapp' | 'instagram';
-  phone_number: string | null;
-  status: 'disconnected' | 'connecting' | 'connected' | 'error';
-  qr_code: string | null;
-  last_connected_at: string | null;
+  channel_type: "whatsapp" | "instagram";
+  phone_number?: string;
+  status: "disconnected" | "connecting" | "connected" | "error";
+  qr_code?: string;
+  last_connected_at?: string;
 }
 
 export default function Channels() {
   const { toast } = useToast();
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [whatsappPhone, setWhatsappPhone] = useState('');
-  const [instagramUsername, setInstagramUsername] = useState('');
-  const [connectingWhatsApp, setConnectingWhatsApp] = useState(false);
-  const [connectingInstagram, setConnectingInstagram] = useState(false);
-  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [channels, setChannels] = useState<ConnectedChannel[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [currentQR, setCurrentQR] = useState<string | null>(null);
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [instagramUsername, setInstagramUsername] = useState("");
+  const [instagramPassword, setInstagramPassword] = useState("");
 
   useEffect(() => {
     loadChannels();
-    
-    // Realtime para atualizações de status
-    const channelsSubscription = supabase
-      .channel('connected_channels_changes')
+    subscribeToChannelUpdates();
+  }, []);
+
+  const loadChannels = async () => {
+    const { data, error } = await supabase
+      .from("connected_channels")
+      .select("*");
+
+    if (error) {
+      console.error("Erro ao carregar canais:", error);
+      return;
+    }
+
+    setChannels((data || []) as ConnectedChannel[]);
+  };
+
+  const subscribeToChannelUpdates = () => {
+    const channel = supabase
+      .channel("connected_channels_changes")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'connected_channels'
+          event: "*",
+          schema: "public",
+          table: "connected_channels",
         },
-        () => loadChannels()
+        (payload) => {
+          console.log("Channel update:", payload);
+          loadChannels();
+        }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channelsSubscription);
+      supabase.removeChannel(channel);
     };
-  }, []);
+  };
 
-  const loadChannels = async () => {
+  const connectWhatsApp = async () => {
+    if (!whatsappPhone.trim()) {
+      toast({
+        title: "Erro",
+        description: "Digite um número de telefone",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('connected_channels')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.functions.invoke("whatsapp-connect", {
+        body: { phone: whatsappPhone },
+      });
 
       if (error) throw error;
-      setChannels((data || []) as Channel[]);
-    } catch (error: any) {
+
+      if (data.qr_code) {
+        setCurrentQR(data.qr_code);
+        setQrDialogOpen(true);
+        toast({
+          title: "QR Code Gerado",
+          description: "Escaneie o QR Code com seu WhatsApp",
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao conectar WhatsApp:", error);
       toast({
-        title: 'Erro ao carregar canais',
-        description: error.message,
-        variant: 'destructive',
+        title: "Erro",
+        description: "Falha ao conectar WhatsApp",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const connectWhatsApp = async () => {
-    if (!whatsappPhone) {
-      toast({
-        title: 'Telefone obrigatório',
-        description: 'Por favor, insira um número de telefone',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setConnectingWhatsApp(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('whatsapp-connect', {
-        body: { action: 'init', phone_number: whatsappPhone }
-      });
-
-      if (error) throw error;
-
-      setQrCode(data.qrCode);
-      toast({
-        title: 'QR Code Gerado',
-        description: 'Escaneie o QR Code com seu WhatsApp',
-      });
-
-      // Simular conexão bem-sucedida após 5 segundos
-      setTimeout(async () => {
-        await supabase
-          .from('connected_channels')
-          .update({ status: 'connected', last_connected_at: new Date().toISOString() })
-          .eq('id', data.channelId);
-        
-        setQrCode(null);
-        toast({
-          title: 'WhatsApp Conectado!',
-          description: 'Seu WhatsApp foi conectado com sucesso',
-        });
-      }, 5000);
-    } catch (error: any) {
-      toast({
-        title: 'Erro ao conectar WhatsApp',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setConnectingWhatsApp(false);
-    }
-  };
-
   const connectInstagram = async () => {
-    if (!instagramUsername) {
+    if (!instagramUsername.trim() || !instagramPassword.trim()) {
       toast({
-        title: 'Username obrigatório',
-        description: 'Por favor, insira seu username do Instagram',
-        variant: 'destructive',
+        title: "Erro",
+        description: "Preencha usuário e senha do Instagram",
+        variant: "destructive",
       });
       return;
     }
 
-    setConnectingInstagram(true);
+    setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('instagram-connect', {
-        body: { action: 'init', username: instagramUsername }
+      const { data, error } = await supabase.functions.invoke("instagram-connect", {
+        body: { 
+          username: instagramUsername,
+          password: instagramPassword 
+        },
       });
 
       if (error) throw error;
 
-      // Simular autenticação
-      setTimeout(async () => {
-        await supabase.functions.invoke('instagram-connect', {
-          body: { action: 'authenticate', channelId: data.channelId }
-        });
-
-        toast({
-          title: 'Instagram Conectado!',
-          description: 'Seu Instagram foi conectado com sucesso',
-        });
-      }, 2000);
-    } catch (error: any) {
       toast({
-        title: 'Erro ao conectar Instagram',
-        description: error.message,
-        variant: 'destructive',
+        title: "Conectado",
+        description: "Instagram conectado com sucesso!",
+      });
+    } catch (error) {
+      console.error("Erro ao conectar Instagram:", error);
+      toast({
+        title: "Erro",
+        description: "Falha ao conectar Instagram",
+        variant: "destructive",
       });
     } finally {
-      setConnectingInstagram(false);
+      setLoading(false);
     }
   };
 
-  const disconnectChannel = async (channelId: string, type: string) => {
-    try {
-      const functionName = type === 'whatsapp' ? 'whatsapp-connect' : 'instagram-connect';
-      const { error } = await supabase.functions.invoke(functionName, {
-        body: { action: 'disconnect', channelId }
-      });
+  const disconnectChannel = async (channelId: string) => {
+    const { error } = await supabase
+      .from("connected_channels")
+      .delete()
+      .eq("id", channelId);
 
-      if (error) throw error;
-
+    if (error) {
       toast({
-        title: 'Canal Desconectado',
-        description: `${type === 'whatsapp' ? 'WhatsApp' : 'Instagram'} desconectado com sucesso`,
+        title: "Erro",
+        description: "Falha ao desconectar canal",
+        variant: "destructive",
       });
-    } catch (error: any) {
+    } else {
       toast({
-        title: 'Erro ao desconectar',
-        description: error.message,
-        variant: 'destructive',
+        title: "Desconectado",
+        description: "Canal desconectado com sucesso",
       });
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, any> = {
-      connected: <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" /> Conectado</Badge>,
-      connecting: <Badge className="bg-yellow-500"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Conectando</Badge>,
-      disconnected: <Badge variant="secondary"><XCircle className="w-3 h-3 mr-1" /> Desconectado</Badge>,
-      error: <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" /> Erro</Badge>,
-    };
-    return variants[status] || variants.disconnected;
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "connected":
+        return <CheckCircle2 className="w-5 h-5 text-success" />;
+      case "connecting":
+        return <Loader2 className="w-5 h-5 text-warning animate-spin" />;
+      default:
+        return <XCircle className="w-5 h-5 text-danger" />;
+    }
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
-  }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
-          Canais de Comunicação
-        </h1>
+        <h1 className="text-3xl font-bold mb-2">Canais de Comunicação</h1>
         <p className="text-muted-foreground">Conecte WhatsApp e Instagram para gerenciar conversas</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* WhatsApp */}
-        <Card className="bg-card/50 backdrop-blur border-primary/20">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageCircle className="w-6 h-6 text-green-500" />
-              WhatsApp
-            </CardTitle>
-            <CardDescription>Conecte seu WhatsApp Business</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {qrCode && (
-              <div className="p-4 bg-white rounded-lg flex flex-col items-center gap-4">
-                <QrCode className="w-32 h-32 text-gray-400" />
-                <p className="text-sm text-center text-muted-foreground">
-                  Escaneie este QR Code com seu WhatsApp
-                </p>
-              </div>
-            )}
+        {/* WhatsApp Card */}
+        <Card className="glass-card p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-[#25D366]/20 flex items-center justify-center">
+              <Phone className="w-6 h-6 text-[#25D366]" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">WhatsApp</h2>
+              <p className="text-sm text-muted-foreground">Solução não oficial via Baileys</p>
+            </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label>Número de Telefone</Label>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="whatsapp-phone">
+                Número do WhatsApp
+              </Label>
               <Input
+                id="whatsapp-phone"
+                type="tel"
                 placeholder="+55 11 99999-9999"
                 value={whatsappPhone}
                 onChange={(e) => setWhatsappPhone(e.target.value)}
+                className="mt-1"
               />
             </div>
 
             <Button
               onClick={connectWhatsApp}
-              disabled={connectingWhatsApp}
-              className="w-full bg-green-500 hover:bg-green-600"
+              disabled={loading}
+              className="w-full"
             >
-              {connectingWhatsApp && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {loading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <QrCode className="w-4 h-4 mr-2" />
+              )}
               Conectar WhatsApp
             </Button>
+          </div>
 
-            {/* Canais WhatsApp conectados */}
-            <div className="space-y-2">
-              {channels.filter(c => c.channel_type === 'whatsapp').map((channel) => (
-                <div key={channel.id} className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
-                  <div>
-                    <p className="font-medium">{channel.phone_number}</p>
-                    {getStatusBadge(channel.status)}
+          <div className="space-y-2">
+            {channels
+              .filter((ch) => ch.channel_type === "whatsapp")
+              .map((channel) => (
+                <div
+                  key={channel.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                >
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(channel.status)}
+                    <div>
+                      <p className="text-sm font-medium">
+                        {channel.phone_number}
+                      </p>
+                      <p className="text-xs text-muted-foreground capitalize">{channel.status}</p>
+                    </div>
                   </div>
-                  {channel.status === 'connected' && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => disconnectChannel(channel.id, 'whatsapp')}
-                    >
-                      Desconectar
-                    </Button>
-                  )}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => disconnectChannel(channel.id)}
+                  >
+                    Desconectar
+                  </Button>
                 </div>
               ))}
-            </div>
-          </CardContent>
+          </div>
         </Card>
 
-        {/* Instagram */}
-        <Card className="bg-card/50 backdrop-blur border-primary/20">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Instagram className="w-6 h-6 text-pink-500" />
-              Instagram
-            </CardTitle>
-            <CardDescription>Conecte seu Instagram Business</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Username do Instagram</Label>
+        {/* Instagram Card */}
+        <Card className="glass-card p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#E1306C] to-[#FD8D32] flex items-center justify-center">
+              <Instagram className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">Instagram Direct</h2>
+              <p className="text-sm text-muted-foreground">Solução não oficial</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="instagram-username">
+                Usuário do Instagram
+              </Label>
               <Input
-                placeholder="@seu_usuario"
+                id="instagram-username"
+                type="text"
+                placeholder="seu_usuario"
                 value={instagramUsername}
                 onChange={(e) => setInstagramUsername(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="instagram-password">
+                Senha
+              </Label>
+              <Input
+                id="instagram-password"
+                type="password"
+                placeholder="••••••••"
+                value={instagramPassword}
+                onChange={(e) => setInstagramPassword(e.target.value)}
+                className="mt-1"
               />
             </div>
 
             <Button
               onClick={connectInstagram}
-              disabled={connectingInstagram}
-              className="w-full bg-pink-500 hover:bg-pink-600"
+              disabled={loading}
+              className="w-full"
             >
-              {connectingInstagram && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {loading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Instagram className="w-4 h-4 mr-2" />
+              )}
               Conectar Instagram
             </Button>
+          </div>
 
-            {/* Canais Instagram conectados */}
-            <div className="space-y-2">
-              {channels.filter(c => c.channel_type === 'instagram').map((channel) => (
-                <div key={channel.id} className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
-                  <div>
-                    <p className="font-medium">@{channel.phone_number}</p>
-                    {getStatusBadge(channel.status)}
+          <div className="space-y-2">
+            {channels
+              .filter((ch) => ch.channel_type === "instagram")
+              .map((channel) => (
+                <div
+                  key={channel.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                >
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(channel.status)}
+                    <div>
+                      <p className="text-sm font-medium">Instagram</p>
+                      <p className="text-xs text-muted-foreground capitalize">{channel.status}</p>
+                    </div>
                   </div>
-                  {channel.status === 'connected' && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => disconnectChannel(channel.id, 'instagram')}
-                    >
-                      Desconectar
-                    </Button>
-                  )}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => disconnectChannel(channel.id)}
+                  >
+                    Desconectar
+                  </Button>
                 </div>
               ))}
-            </div>
-          </CardContent>
+          </div>
         </Card>
       </div>
+
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Escanear QR Code</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 p-4">
+            {currentQR && (
+              <div className="bg-white p-4 rounded-lg">
+                <img src={currentQR} alt="QR Code" className="w-64 h-64" />
+              </div>
+            )}
+            <p className="text-muted-foreground text-center text-sm">
+              Abra o WhatsApp no seu celular e escaneie este QR Code
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
