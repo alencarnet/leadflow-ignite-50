@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users, MessageSquare, TrendingUp, Settings, Menu } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquare, TrendingUp, Settings, Menu, Wifi } from "lucide-react";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 import { useState } from "react";
@@ -13,6 +13,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { icon: Users, label: "Leads", path: "/leads" },
     { icon: MessageSquare, label: "Chat", path: "/chat" },
     { icon: TrendingUp, label: "CRM", path: "/crm" },
+    { icon: Wifi, label: "Canais", path: "/channels" },
     { icon: Settings, label: "Configurações", path: "/settings" },
   ];
 

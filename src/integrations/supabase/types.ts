@@ -14,7 +14,145 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      connected_channels: {
+        Row: {
+          channel_type: string
+          created_at: string
+          id: string
+          last_connected_at: string | null
+          phone_number: string | null
+          qr_code: string | null
+          session_data: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          channel_type: string
+          created_at?: string
+          id?: string
+          last_connected_at?: string | null
+          phone_number?: string | null
+          qr_code?: string | null
+          session_data?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          channel_type?: string
+          created_at?: string
+          id?: string
+          last_connected_at?: string | null
+          phone_number?: string | null
+          qr_code?: string | null
+          session_data?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      conversations: {
+        Row: {
+          channel_id: string
+          contact_avatar: string | null
+          contact_id: string
+          contact_name: string
+          created_at: string
+          id: string
+          last_message: string | null
+          last_message_time: string | null
+          status: string | null
+          unread_count: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          channel_id: string
+          contact_avatar?: string | null
+          contact_id: string
+          contact_name: string
+          created_at?: string
+          id?: string
+          last_message?: string | null
+          last_message_time?: string | null
+          status?: string | null
+          unread_count?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          channel_id?: string
+          contact_avatar?: string | null
+          contact_id?: string
+          contact_name?: string
+          created_at?: string
+          id?: string
+          last_message?: string | null
+          last_message_time?: string | null
+          status?: string | null
+          unread_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "connected_channels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          media_type: string | null
+          media_url: string | null
+          message_id: string
+          sender_type: string
+          status: string | null
+          timestamp: string
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          message_id: string
+          sender_type: string
+          status?: string | null
+          timestamp?: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          message_id?: string
+          sender_type?: string
+          status?: string | null
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

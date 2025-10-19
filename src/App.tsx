@@ -10,6 +10,7 @@ import Leads from "./pages/Leads";
 import Chat from "./pages/Chat";
 import CRM from "./pages/CRM";
 import Settings from "./pages/Settings";
+import Channels from "./pages/Channels";
 import Layout from "./components/Layout";
 import NotFound from "./pages/NotFound";
 
@@ -42,6 +43,7 @@ const App = () => (
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
           <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
+          <Route path="/channels" element={<ProtectedRoute><Channels /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
