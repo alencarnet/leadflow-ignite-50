@@ -1,12 +1,21 @@
-import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users, MessageSquare, TrendingUp, Settings, Menu, Wifi } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { LayoutDashboard, Users, MessageSquare, TrendingUp, Settings, Menu, Wifi, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    toast.success("Logout realizado com sucesso!");
+    navigate("/auth");
+  };
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
@@ -78,7 +87,15 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
               <MenuItem key={item.path} item={item} />
             ))}
           </nav>
-          <div className="p-4 border-t border-border/50">
+          <div className="p-4 border-t border-border/50 space-y-2">
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-muted-foreground hover:text-foreground" 
+              onClick={handleLogout}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sair
+            </Button>
             <div className="glass-card p-3 rounded-lg">
               <p className="text-xs text-muted-foreground">FluxoLead AI</p>
               <p className="text-sm font-medium">v3.0</p>
