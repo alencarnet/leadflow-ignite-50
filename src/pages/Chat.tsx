@@ -1,197 +1,351 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { useState, useEffect, useRef } from "react";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Send, MoreVertical } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Send, Phone, Instagram, Image, Paperclip } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
-const Chat = () => {
-  const [selectedConversation, setSelectedConversation] = useState("1");
-  const [message, setMessage] = useState("");
+interface Conversation {
+  id: string;
+  contact_name: string;
+  contact_avatar?: string;
+  last_message?: string;
+  last_message_time?: string;
+  unread_count?: number;
+  channel_id: string;
+  channel_type?: "whatsapp" | "instagram";
+}
 
-  const conversations = [
-    {
-      id: "1",
-      lead: "Tech Solutions LTDA",
-      channel: "whatsapp",
-      lastMessage: "Olá, gostaria de saber mais sobre os planos disponíveis",
-      time: "2 min",
-      unread: 2,
-      online: true
-    },
-    {
-      id: "2",
-      lead: "Inovação Digital ME",
-      channel: "instagram",
-      lastMessage: "Qual o prazo de entrega?",
-      time: "5 min",
-      unread: 0,
-      online: true
-    },
-    {
-      id: "3",
-      lead: "Comércio XYZ",
-      channel: "whatsapp",
-      lastMessage: "Podemos agendar uma reunião?",
-      time: "12 min",
-      unread: 1,
-      online: false
-    },
-    {
-      id: "4",
-      lead: "Serviços ABC",
-      channel: "instagram",
-      lastMessage: "Obrigado pelas informações!",
-      time: "1h",
-      unread: 0,
-      online: false
-    },
-  ];
+interface Message {
+  id: string;
+  content: string;
+  sender_type: "user" | "contact";
+  timestamp: string;
+  status?: "sending" | "sent" | "delivered" | "read";
+  media_url?: string;
+  media_type?: string;
+}
 
-  const messages = [
-    { id: "1", from: "lead", text: "Olá! Tudo bem?", time: "10:23" },
-    { id: "2", from: "user", text: "Olá! Tudo ótimo, e você?", time: "10:24" },
-    { id: "3", from: "lead", text: "Gostaria de saber mais sobre os planos disponíveis", time: "10:25" },
-    { id: "4", from: "user", text: "Claro! Temos 3 planos principais: Básico, Profissional e Enterprise. Qual o seu interesse?", time: "10:26" },
-    { id: "5", from: "lead", text: "Me fale mais sobre o plano Profissional", time: "10:28" },
-  ];
+export default function Chat() {
+  const { toast } = useToast();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      console.log("Sending:", message);
-      setMessage("");
+  useEffect(() => {
+    loadConversations();
+    subscribeToConversations();
+  }, []);
+
+  useEffect(() => {
+    if (selectedConversation) {
+      loadMessages(selectedConversation);
+      subscribeToMessages(selectedConversation);
+    }
+  }, [selectedConversation]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const loadConversations = async () => {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select(`
+        *,
+        connected_channels!inner(channel_type)
+      `)
+      .order("last_message_time", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao carregar conversas:", error);
+      return;
+    }
+
+    const conversationsWithType = data.map((conv: any) => ({
+      ...conv,
+      channel_type: conv.connected_channels?.channel_type
+    }));
+
+    setConversations(conversationsWithType as Conversation[]);
+  };
+
+  const loadMessages = async (conversationId: string) => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .order("timestamp", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar mensagens:", error);
+      return;
+    }
+
+    setMessages((data || []) as Message[]);
+  };
+
+  const subscribeToConversations = () => {
+    const channel = supabase
+      .channel("conversations_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "conversations",
+        },
+        () => {
+          loadConversations();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const subscribeToMessages = (conversationId: string) => {
+    const channel = supabase
+      .channel(`messages_${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new as Message]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !selectedConversation) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.functions.invoke("send-message", {
+        body: {
+          conversationId: selectedConversation,
+          content: newMessage,
+        },
+      });
+
+      if (error) throw error;
+
+      setNewMessage("");
+      toast({
+        title: "Mensagem enviada",
+        description: "Sua mensagem foi enviada com sucesso",
+      });
+    } catch (error) {
+      console.error("Erro ao enviar mensagem:", error);
+      toast({
+        title: "Erro",
+        description: "Falha ao enviar mensagem",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const selectedConv = conversations.find(c => c.id === selectedConversation);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const selectedConv = conversations.find((c) => c.id === selectedConversation);
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold mb-2 text-foreground">Chat Omnichannel</h1>
-          <p className="text-muted-foreground">Centralize WhatsApp e Instagram em um só lugar</p>
-        </div>
-        <div className="flex gap-2">
-          <Badge className="bg-success/20 text-success border-success">
-            {conversations.filter(c => c.online).length} Online
-          </Badge>
-          <Badge className="bg-primary/20 text-primary border-primary">
-            {conversations.reduce((acc, c) => acc + c.unread, 0)} Não lidas
-          </Badge>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[calc(100vh-220px)]">
-        <Card className="md:col-span-1 glass-card shadow-card">
-          <CardHeader>
-            <CardTitle className="text-base">Conversas</CardTitle>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Buscar conversas..." className="pl-10" />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[calc(100vh-360px)]">
-              <div className="space-y-1 p-4 pt-0">
-                {conversations.map((conv) => (
-                  <div
-                    key={conv.id}
-                    onClick={() => setSelectedConversation(conv.id)}
-                    className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                      selectedConversation === conv.id ? 'bg-primary/10' : 'hover:bg-muted/50'
-                    }`}
-                  >
-                    <div className="text-2xl">
-                      {conv.channel === "whatsapp" ? "💬" : "📸"}
+    <div className="h-[calc(100vh-4rem)] flex gap-4">
+      {/* Lista de conversas */}
+      <Card className="w-80 p-4 flex flex-col">
+        <h2 className="text-lg font-bold mb-4">Conversas</h2>
+        <ScrollArea className="flex-1">
+          <div className="space-y-2">
+            {conversations.map((conv) => (
+              <div
+                key={conv.id}
+                onClick={() => setSelectedConversation(conv.id)}
+                className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                  selectedConversation === conv.id
+                    ? "bg-primary/10 border-2 border-primary"
+                    : "hover:bg-muted"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar>
+                    <AvatarImage src={conv.contact_avatar} />
+                    <AvatarFallback>
+                      {conv.contact_name.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium truncate">{conv.contact_name}</p>
+                      {conv.channel_type === "whatsapp" && (
+                        <Phone className="w-3 h-3 text-[#25D366]" />
+                      )}
+                      {conv.channel_type === "instagram" && (
+                        <Instagram className="w-3 h-3 text-[#E1306C]" />
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-medium text-sm">{conv.lead}</p>
-                        <span className="text-xs text-muted-foreground">{conv.time}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate">{conv.lastMessage}</p>
-                    </div>
-                    {conv.unread > 0 && (
-                      <Badge variant="default" className="rounded-full px-2">
-                        {conv.unread}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2 flex flex-col glass-card shadow-card">
-          <CardHeader className="border-b border-border/50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-xl text-2xl">
-                  {selectedConv?.channel === "whatsapp" ? "💬" : "📸"}
-                </div>
-                <div>
-                  <CardTitle className="text-base text-foreground">{selectedConv?.lead}</CardTitle>
-                  <CardDescription className="flex items-center gap-2">
-                    {selectedConv?.online && (
-                      <>
-                        <span className="w-2 h-2 bg-success rounded-full animate-pulse"></span>
-                        <span className="text-success">Online agora</span>
-                      </>
-                    )}
-                    {!selectedConv?.online && (
-                      <>
-                        <span className="w-2 h-2 bg-muted-foreground rounded-full"></span>
-                        <span className="text-muted-foreground">Offline</span>
-                      </>
-                    )}
-                  </CardDescription>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" className="glass-button">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-            </div>
-          </CardHeader>
-
-          <ScrollArea className="flex-1 p-6 bg-background/50">
-            <div className="space-y-4">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}
-                >
-                  <div className={`max-w-[70%] ${msg.from === 'user' ? 'bg-primary text-primary-foreground shadow-glow' : 'bg-card border border-border/50'} rounded-2xl px-4 py-3`}>
-                    <p className={`text-sm ${msg.from === 'user' ? 'text-primary-foreground' : 'text-foreground'}`}>{msg.text}</p>
-                    <p className={`text-xs mt-2 ${msg.from === 'user' ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                      {msg.time}
+                    <p className="text-sm text-muted-foreground truncate">
+                      {conv.last_message || "Sem mensagens"}
                     </p>
                   </div>
+                  {conv.unread_count && conv.unread_count > 0 ? (
+                    <Badge variant="default" className="ml-auto">
+                      {conv.unread_count}
+                    </Badge>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          </ScrollArea>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </Card>
 
-          <CardContent className="border-t border-border/50 p-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Digite sua mensagem..."
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                className="bg-muted/30"
-              />
-              <Button onClick={handleSendMessage} className="bg-primary hover:bg-primary/90 glow-effect">
-                <Send className="w-4 h-4" />
-              </Button>
+      {/* Área de mensagens */}
+      <Card className="flex-1 flex flex-col">
+        {selectedConv ? (
+          <>
+            {/* Cabeçalho */}
+            <div className="p-4 border-b flex items-center gap-3">
+              <Avatar>
+                <AvatarImage src={selectedConv.contact_avatar} />
+                <AvatarFallback>
+                  {selectedConv.contact_name.substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <p className="font-medium">{selectedConv.contact_name}</p>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  {selectedConv.channel_type === "whatsapp" && (
+                    <>
+                      <Phone className="w-3 h-3" />
+                      <span>WhatsApp</span>
+                    </>
+                  )}
+                  {selectedConv.channel_type === "instagram" && (
+                    <>
+                      <Instagram className="w-3 h-3" />
+                      <span>Instagram</span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+
+            {/* Mensagens */}
+            <ScrollArea className="flex-1 p-4">
+              <div className="space-y-4">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${
+                      message.sender_type === "user" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[70%] rounded-lg p-3 ${
+                        message.sender_type === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted"
+                      }`}
+                    >
+                      {message.media_url && (
+                        <div className="mb-2">
+                          {message.media_type?.startsWith("image") ? (
+                            <img
+                              src={message.media_url}
+                              alt="Media"
+                              className="rounded max-w-full"
+                            />
+                          ) : (
+                            <a
+                              href={message.media_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 text-sm underline"
+                            >
+                              <Paperclip className="w-4 h-4" />
+                              Arquivo anexado
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <p
+                        className={`text-xs mt-1 ${
+                          message.sender_type === "user"
+                            ? "text-primary-foreground/70"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {new Date(message.timestamp).toLocaleTimeString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            </ScrollArea>
+
+            {/* Input de mensagem */}
+            <div className="p-4 border-t">
+              <div className="flex gap-2">
+                <Button variant="outline" size="icon">
+                  <Image className="w-4 h-4" />
+                </Button>
+                <Button variant="outline" size="icon">
+                  <Paperclip className="w-4 h-4" />
+                </Button>
+                <Input
+                  placeholder="Digite sua mensagem..."
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  disabled={loading}
+                />
+                <Button onClick={sendMessage} disabled={loading || !newMessage.trim()}>
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <p>Selecione uma conversa para começar</p>
+          </div>
+        )}
+      </Card>
     </div>
   );
-};
-
-export default Chat;
+}
