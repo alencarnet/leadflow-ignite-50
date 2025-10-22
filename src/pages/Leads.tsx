@@ -9,8 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Search, Upload, MessageCircle, Filter, Download, Loader2, Building2, User, FileText } from "lucide-react";
+import { Search, Upload, MessageCircle, Filter, Download, Loader2, Building2, User, FileText, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+interface Lead {
+  id: string;
+  name: string;
+  cnpj: string;
+  sector: string;
+  temp: "hot" | "warm" | "cold";
+  score: number;
+  status: string;
+  phone: string;
+  partners?: string;
+  email?: string;
+}
 
 const Leads = () => {
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -20,6 +36,12 @@ const Leads = () => {
   const [selectedApi, setSelectedApi] = useState<"auto" | "receitaws" | "cnpjws" | "brasilapi">("auto");
   const [isSearching, setIsSearching] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState({
+    includePartners: true,
+    includePhone: true,
+    includeEmail: true
+  });
 
   const toggleLead = (id: string) => {
     setSelectedLeads(prev =>
@@ -27,12 +49,12 @@ const Leads = () => {
     );
   };
 
-  const [leads, setLeads] = useState([
-    { id: "1", name: "Tech Solutions LTDA", cnpj: "12.345.678/0001-90", sector: "Tecnologia", temp: "hot", score: 92, status: "Primeiro Contato", phone: "+5511999999999" },
-    { id: "2", name: "Inovação Digital ME", cnpj: "98.765.432/0001-10", sector: "Marketing", temp: "hot", score: 88, status: "Em Andamento", phone: "+5511988888888" },
-    { id: "3", name: "Comércio XYZ", cnpj: "11.222.333/0001-44", sector: "Varejo", temp: "warm", score: 65, status: "Primeiro Contato", phone: "+5511977777777" },
-    { id: "4", name: "Serviços ABC", cnpj: "44.555.666/0001-77", sector: "Serviços", temp: "cold", score: 38, status: "Primeiro Contato", phone: "+5511966666666" },
-    { id: "5", name: "Indústria 4.0 S/A", cnpj: "22.333.444/0001-88", sector: "Indústria", temp: "hot", score: 85, status: "Aguardando Pagamento", phone: "+5511955555555" },
+  const [leads, setLeads] = useState<Lead[]>([
+    { id: "1", name: "Tech Solutions LTDA", cnpj: "12.345.678/0001-90", sector: "Tecnologia", temp: "hot", score: 92, status: "Primeiro Contato", phone: "+5511999999999", partners: "João Silva, Maria Santos", email: "contato@techsolutions.com.br" },
+    { id: "2", name: "Inovação Digital ME", cnpj: "98.765.432/0001-10", sector: "Marketing", temp: "hot", score: 88, status: "Em Andamento", phone: "+5511988888888", partners: "Pedro Oliveira", email: "contato@inovacao.com.br" },
+    { id: "3", name: "Comércio XYZ", cnpj: "11.222.333/0001-44", sector: "Varejo", temp: "warm", score: 65, status: "Primeiro Contato", phone: "+5511977777777", partners: "Ana Costa", email: "vendas@comercioxyz.com.br" },
+    { id: "4", name: "Serviços ABC", cnpj: "44.555.666/0001-77", sector: "Serviços", temp: "cold", score: 38, status: "Primeiro Contato", phone: "+5511966666666", partners: "Carlos Mendes", email: "abc@servicos.com.br" },
+    { id: "5", name: "Indústria 4.0 S/A", cnpj: "22.333.444/0001-88", sector: "Indústria", temp: "hot", score: 85, status: "Aguardando Pagamento", phone: "+5511955555555", partners: "Roberto Lima, Juliana Rocha", email: "industria@40sa.com.br" },
   ]);
 
   // Função para consultar múltiplas APIs de CNPJ em paralelo
@@ -161,14 +183,212 @@ const Leads = () => {
     }
   };
 
-  const handleImportarCNPJ = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportarCNPJ = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      toast.success(`Importando ${file.name}...`);
-      setTimeout(() => {
-        toast.success("15 leads importados com sucesso!");
-      }, 2000);
+    if (!file) return;
+
+    toast.info(`Processando ${file.name}...`);
+
+    try {
+      if (file.type === 'application/pdf') {
+        // Importação de PDF
+        const text = await file.text();
+        const parsedLeads = parsePDFData(text);
+        
+        if (parsedLeads.length > 0) {
+          setLeads(prev => [...parsedLeads, ...prev]);
+          toast.success(`${parsedLeads.length} leads importados do PDF com sucesso!`);
+        } else {
+          toast.warning("Nenhum lead encontrado no PDF");
+        }
+      } else {
+        // Importação de CSV/Excel
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const data = evt.target?.result;
+            const workbook = XLSX.read(data, { type: 'binary' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+            const importedLeads: Lead[] = jsonData.map((row: any, index: number) => ({
+              id: `imported-${Date.now()}-${index}`,
+              name: row['Razão Social'] || row['Nome'] || row['name'] || 'Sem nome',
+              cnpj: row['CNPJ'] || row['cnpj'] || 'Não informado',
+              sector: row['Setor'] || row['Atividade Principal'] || row['sector'] || 'Não informado',
+              temp: 'warm' as const,
+              score: Math.floor(Math.random() * 30) + 60,
+              status: 'Importado',
+              phone: row['Telefone'] || row['phone'] || '',
+              partners: row['Sócios'] || row['partners'] || row['Quadro Societário'] || '',
+              email: row['Email'] || row['email'] || ''
+            }));
+
+            setLeads(prev => [...importedLeads, ...prev]);
+            toast.success(`${importedLeads.length} leads importados com sucesso!`);
+          } catch (error) {
+            console.error('Erro ao processar arquivo:', error);
+            toast.error('Erro ao processar o arquivo');
+          }
+        };
+        reader.readAsBinaryString(file);
+      }
+    } catch (error) {
+      console.error('Erro ao importar:', error);
+      toast.error('Erro ao importar arquivo');
     }
+  };
+
+  const parsePDFData = (text: string): Lead[] => {
+    const leads: Lead[] = [];
+    const lines = text.split('\n');
+    
+    // Padrão para detectar CNPJ (14 dígitos com ou sem formatação)
+    const cnpjRegex = /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g;
+    
+    let currentLead: Partial<Lead> = {};
+    
+    lines.forEach((line, index) => {
+      const trimmedLine = line.trim();
+      
+      // Detecta CNPJ
+      const cnpjMatch = trimmedLine.match(cnpjRegex);
+      if (cnpjMatch) {
+        // Se já tinha um lead sendo processado, salva ele
+        if (currentLead.cnpj) {
+          leads.push({
+            id: `pdf-${Date.now()}-${leads.length}`,
+            name: currentLead.name || 'Empresa sem nome',
+            cnpj: currentLead.cnpj,
+            sector: currentLead.sector || 'Não informado',
+            temp: 'warm',
+            score: Math.floor(Math.random() * 30) + 60,
+            status: 'Importado do PDF',
+            phone: currentLead.phone || '',
+            partners: currentLead.partners || '',
+            email: currentLead.email || ''
+          });
+        }
+        
+        // Inicia novo lead
+        currentLead = { cnpj: cnpjMatch[0] };
+        
+        // Tenta pegar o nome na mesma linha ou linhas anteriores
+        const possibleName = trimmedLine.replace(cnpjMatch[0], '').trim();
+        if (possibleName.length > 3) {
+          currentLead.name = possibleName;
+        } else if (index > 0) {
+          currentLead.name = lines[index - 1].trim();
+        }
+      }
+      
+      // Detecta telefone
+      if (trimmedLine.match(/\(?\d{2}\)?\s?\d{4,5}-?\d{4}/)) {
+        currentLead.phone = trimmedLine.match(/\(?\d{2}\)?\s?\d{4,5}-?\d{4}/)?.[0] || '';
+      }
+      
+      // Detecta email
+      if (trimmedLine.match(/[\w.-]+@[\w.-]+\.\w+/)) {
+        currentLead.email = trimmedLine.match(/[\w.-]+@[\w.-]+\.\w+/)?.[0] || '';
+      }
+      
+      // Detecta sócios (procura por nomes próprios)
+      if (trimmedLine.match(/^[A-Z][a-z]+ [A-Z][a-z]+/) && !currentLead.partners) {
+        currentLead.partners = trimmedLine;
+      }
+    });
+    
+    // Adiciona o último lead se houver
+    if (currentLead.cnpj) {
+      leads.push({
+        id: `pdf-${Date.now()}-${leads.length}`,
+        name: currentLead.name || 'Empresa sem nome',
+        cnpj: currentLead.cnpj,
+        sector: currentLead.sector || 'Não informado',
+        temp: 'warm',
+        score: Math.floor(Math.random() * 30) + 60,
+        status: 'Importado do PDF',
+        phone: currentLead.phone || '',
+        partners: currentLead.partners || '',
+        email: currentLead.email || ''
+      });
+    }
+    
+    return leads;
+  };
+
+  const exportToExcel = () => {
+    const dataToExport = prepareExportData();
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads');
+    XLSX.writeFile(workbook, `leads-export-${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success('Exportado para Excel com sucesso!');
+  };
+
+  const exportToCSV = () => {
+    const dataToExport = prepareExportData();
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const csv = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `leads-export-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    toast.success('Exportado para CSV com sucesso!');
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    const dataToExport = prepareExportData();
+    
+    doc.setFontSize(16);
+    doc.text('Relatório de Leads', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
+    
+    const headers = Object.keys(dataToExport[0] || {});
+    const rows = dataToExport.map(item => headers.map(key => item[key] || ''));
+    
+    autoTable(doc, {
+      head: [headers],
+      body: rows,
+      startY: 28,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246] }
+    });
+    
+    doc.save(`leads-export-${new Date().toISOString().split('T')[0]}.pdf`);
+    toast.success('Exportado para PDF com sucesso!');
+  };
+
+  const prepareExportData = () => {
+    const selectedData = selectedLeads.length > 0 
+      ? leads.filter(lead => selectedLeads.includes(lead.id))
+      : leads;
+
+    return selectedData.map(lead => {
+      const data: any = {
+        'Nome': lead.name,
+        'CNPJ': lead.cnpj,
+        'Setor': lead.sector,
+        'Score': lead.score,
+        'Status': lead.status
+      };
+
+      if (exportFilters.includePartners && lead.partners) {
+        data['Sócios'] = lead.partners;
+      }
+      if (exportFilters.includePhone && lead.phone) {
+        data['Telefone'] = lead.phone;
+      }
+      if (exportFilters.includeEmail && lead.email) {
+        data['Email'] = lead.email;
+      }
+
+      return data;
+    });
   };
 
   const handleSendWhatsApp = () => {
@@ -339,10 +559,10 @@ const Leads = () => {
                 <TabsContent value="bulk" className="space-y-4 mt-6">
                   <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer bg-muted/20">
                     <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground mb-4">Arraste um arquivo CSV/Excel ou clique para selecionar</p>
+                    <p className="text-sm text-muted-foreground mb-4">Arraste um arquivo PDF, CSV ou Excel</p>
                     <input
                       type="file"
-                      accept=".csv,.xlsx,.xls"
+                      accept=".csv,.xlsx,.xls,.pdf"
                       onChange={handleImportarCNPJ}
                       className="hidden"
                       id="bulk-upload"
