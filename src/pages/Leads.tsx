@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Search, Upload, MessageCircle, Filter, Download, Loader2, Building2, User, FileText, FileSpreadsheet } from "lucide-react";
+import { Search, Upload, MessageCircle, Filter, Download, Loader2, Building2, User, FileText, FileSpreadsheet, Eye, X } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -37,6 +37,7 @@ const Leads = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [selectedLeadDetails, setSelectedLeadDetails] = useState<Lead | null>(null);
   const [exportFilters, setExportFilters] = useState({
     includePartners: true,
     includePhone: true,
@@ -244,75 +245,103 @@ const Leads = () => {
     const leads: Lead[] = [];
     const lines = text.split('\n');
     
-    // Padrão para detectar CNPJ (14 dígitos com ou sem formatação)
-    const cnpjRegex = /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g;
-    
-    let currentLead: Partial<Lead> = {};
+    // Detecta tabelas no formato: | UF | Startup | CNPJ | Categoria | Estande |
+    const tableRowRegex = /\|\s*([A-Z]{2})\s*\|\s*(.+?)\s*\|\s*([\d./-]+)\s*\|\s*(.+?)\s*\|/;
     
     lines.forEach((line, index) => {
       const trimmedLine = line.trim();
+      const match = trimmedLine.match(tableRowRegex);
       
-      // Detecta CNPJ
-      const cnpjMatch = trimmedLine.match(cnpjRegex);
-      if (cnpjMatch) {
-        // Se já tinha um lead sendo processado, salva ele
-        if (currentLead.cnpj) {
+      if (match && !trimmedLine.includes('Startup') && !trimmedLine.includes('---')) {
+        const [, uf, name, cnpj, sector] = match;
+        
+        // Limpa o nome removendo espaços extras
+        const cleanName = name.trim();
+        
+        // Limpa o CNPJ
+        const cleanCnpj = cnpj.trim();
+        
+        // Limpa o setor
+        const cleanSector = sector.trim();
+        
+        if (cleanCnpj.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/)) {
           leads.push({
             id: `pdf-${Date.now()}-${leads.length}`,
-            name: currentLead.name || 'Empresa sem nome',
-            cnpj: currentLead.cnpj,
-            sector: currentLead.sector || 'Não informado',
+            name: cleanName,
+            cnpj: cleanCnpj,
+            sector: cleanSector,
             temp: 'warm',
             score: Math.floor(Math.random() * 30) + 60,
             status: 'Importado do PDF',
-            phone: currentLead.phone || '',
-            partners: currentLead.partners || '',
-            email: currentLead.email || ''
+            phone: '',
+            partners: '',
+            email: ''
           });
         }
-        
-        // Inicia novo lead
-        currentLead = { cnpj: cnpjMatch[0] };
-        
-        // Tenta pegar o nome na mesma linha ou linhas anteriores
-        const possibleName = trimmedLine.replace(cnpjMatch[0], '').trim();
-        if (possibleName.length > 3) {
-          currentLead.name = possibleName;
-        } else if (index > 0) {
-          currentLead.name = lines[index - 1].trim();
-        }
-      }
-      
-      // Detecta telefone
-      if (trimmedLine.match(/\(?\d{2}\)?\s?\d{4,5}-?\d{4}/)) {
-        currentLead.phone = trimmedLine.match(/\(?\d{2}\)?\s?\d{4,5}-?\d{4}/)?.[0] || '';
-      }
-      
-      // Detecta email
-      if (trimmedLine.match(/[\w.-]+@[\w.-]+\.\w+/)) {
-        currentLead.email = trimmedLine.match(/[\w.-]+@[\w.-]+\.\w+/)?.[0] || '';
-      }
-      
-      // Detecta sócios (procura por nomes próprios)
-      if (trimmedLine.match(/^[A-Z][a-z]+ [A-Z][a-z]+/) && !currentLead.partners) {
-        currentLead.partners = trimmedLine;
       }
     });
     
-    // Adiciona o último lead se houver
-    if (currentLead.cnpj) {
-      leads.push({
-        id: `pdf-${Date.now()}-${leads.length}`,
-        name: currentLead.name || 'Empresa sem nome',
-        cnpj: currentLead.cnpj,
-        sector: currentLead.sector || 'Não informado',
-        temp: 'warm',
-        score: Math.floor(Math.random() * 30) + 60,
-        status: 'Importado do PDF',
-        phone: currentLead.phone || '',
-        partners: currentLead.partners || '',
-        email: currentLead.email || ''
+    // Fallback: tenta o método antigo se não encontrou tabela
+    if (leads.length === 0) {
+      const cnpjRegex = /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g;
+      let currentLead: Partial<Lead> = {};
+      
+      lines.forEach((line, index) => {
+        const trimmedLine = line.trim();
+        const cnpjMatch = trimmedLine.match(cnpjRegex);
+        
+        if (cnpjMatch) {
+          if (currentLead.cnpj) {
+            leads.push({
+              id: `pdf-${Date.now()}-${leads.length}`,
+              name: currentLead.name || 'Empresa sem nome',
+              cnpj: currentLead.cnpj,
+              sector: currentLead.sector || 'Não informado',
+              temp: 'warm',
+              score: Math.floor(Math.random() * 30) + 60,
+              status: 'Importado do PDF',
+              phone: currentLead.phone || '',
+              partners: currentLead.partners || '',
+              email: currentLead.email || ''
+            });
+          }
+          
+          currentLead = { cnpj: cnpjMatch[0] };
+          const possibleName = trimmedLine.replace(cnpjMatch[0], '').trim();
+          if (possibleName.length > 3) {
+            currentLead.name = possibleName;
+          } else if (index > 0) {
+            currentLead.name = lines[index - 1].trim();
+          }
+        }
+        
+        if (trimmedLine.match(/\(?\d{2}\)?\s?\d{4,5}-?\d{4}/)) {
+          currentLead.phone = trimmedLine.match(/\(?\d{2}\)?\s?\d{4,5}-?\d{4}/)?.[0] || '';
+        }
+        
+        if (trimmedLine.match(/[\w.-]+@[\w.-]+\.\w+/)) {
+          currentLead.email = trimmedLine.match(/[\w.-]+@[\w.-]+\.\w+/)?.[0] || '';
+        }
+        
+        if (trimmedLine.match(/^[A-Z][a-z]+ [A-Z][a-z]+/) && !currentLead.partners) {
+          currentLead.partners = trimmedLine;
+        }
       });
+      
+      if (currentLead.cnpj) {
+        leads.push({
+          id: `pdf-${Date.now()}-${leads.length}`,
+          name: currentLead.name || 'Empresa sem nome',
+          cnpj: currentLead.cnpj,
+          sector: currentLead.sector || 'Não informado',
+          temp: 'warm',
+          score: Math.floor(Math.random() * 30) + 60,
+          status: 'Importado do PDF',
+          phone: currentLead.phone || '',
+          partners: currentLead.partners || '',
+          email: currentLead.email || ''
+        });
+      }
     }
     
     return leads;
@@ -648,7 +677,11 @@ const Leads = () => {
               <Filter className="w-4 h-4 mr-2" />
               Filtros
             </Button>
-            <Button variant="outline" className="glass-button">
+            <Button 
+              variant="outline" 
+              className="glass-button"
+              onClick={() => setIsExportDialogOpen(true)}
+            >
               <Download className="w-4 h-4 mr-2" />
               Exportar
             </Button>
@@ -658,7 +691,7 @@ const Leads = () => {
             {filteredLeads.map((lead, index) => (
               <div
                 key={lead.id}
-                className="flex items-center gap-4 p-5 border border-border/50 rounded-xl hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group animate-slide-up"
+                className="flex items-center gap-4 p-5 border border-border/50 rounded-xl hover:border-primary/50 hover:bg-primary/5 transition-all group animate-slide-up"
                 style={{ animationDelay: `${index * 30}ms` }}
               >
                 <Checkbox
@@ -666,7 +699,10 @@ const Leads = () => {
                   onCheckedChange={() => toggleLead(lead.id)}
                   className="flex-shrink-0"
                 />
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div 
+                  className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-4 cursor-pointer"
+                  onClick={() => setSelectedLeadDetails(lead)}
+                >
                   <div>
                     <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{lead.name}</p>
                     <p className="text-sm text-muted-foreground">{lead.cnpj}</p>
@@ -702,14 +738,236 @@ const Leads = () => {
                     <p className="text-sm text-foreground">{lead.status}</p>
                   </div>
                 </div>
-                <Button size="sm" variant="outline" className="glass-button flex-shrink-0">
-                  <MessageCircle className="w-4 h-4" />
-                </Button>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="glass-button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedLeadDetails(lead);
+                    }}
+                  >
+                    <Eye className="w-4 h-4" />
+                  </Button>
+                  <Button size="sm" variant="outline" className="glass-button">
+                    <MessageCircle className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
+
+      {/* Dialog de Exportação */}
+      <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="glass-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Exportar Leads</DialogTitle>
+            <DialogDescription>
+              Selecione os campos e formato de exportação
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <Label className="text-base font-semibold">Campos para exportar</Label>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="export-partners"
+                    checked={exportFilters.includePartners}
+                    onCheckedChange={(checked) => 
+                      setExportFilters(prev => ({ ...prev, includePartners: checked as boolean }))
+                    }
+                  />
+                  <Label htmlFor="export-partners" className="cursor-pointer">
+                    Sócios
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="export-phone"
+                    checked={exportFilters.includePhone}
+                    onCheckedChange={(checked) => 
+                      setExportFilters(prev => ({ ...prev, includePhone: checked as boolean }))
+                    }
+                  />
+                  <Label htmlFor="export-phone" className="cursor-pointer">
+                    Telefone
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="export-email"
+                    checked={exportFilters.includeEmail}
+                    onCheckedChange={(checked) => 
+                      setExportFilters(prev => ({ ...prev, includeEmail: checked as boolean }))
+                    }
+                  />
+                  <Label htmlFor="export-email" className="cursor-pointer">
+                    Email
+                  </Label>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <Label className="text-base font-semibold mb-3 block">Formato de exportação</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <Button 
+                  onClick={() => {
+                    exportToExcel();
+                    setIsExportDialogOpen(false);
+                  }}
+                  className="bg-success hover:bg-success/90"
+                >
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Excel
+                </Button>
+                <Button 
+                  onClick={() => {
+                    exportToCSV();
+                    setIsExportDialogOpen(false);
+                  }}
+                  className="bg-info hover:bg-info/90"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  CSV
+                </Button>
+                <Button 
+                  onClick={() => {
+                    exportToPDF();
+                    setIsExportDialogOpen(false);
+                  }}
+                  className="bg-destructive hover:bg-destructive/90"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  PDF
+                </Button>
+              </div>
+            </div>
+
+            {selectedLeads.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {selectedLeads.length} lead(s) selecionado(s) será(ão) exportado(s)
+              </p>
+            )}
+            {selectedLeads.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Todos os {leads.length} leads serão exportados
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Detalhes do Lead */}
+      <Dialog open={!!selectedLeadDetails} onOpenChange={() => setSelectedLeadDetails(null)}>
+        <DialogContent className="glass-card max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-foreground flex items-center justify-between">
+              Detalhes Completos do Lead
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setSelectedLeadDetails(null)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </DialogTitle>
+            <DialogDescription>
+              Informações detalhadas sobre o lead selecionado
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedLeadDetails && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Nome da Empresa</Label>
+                  <p className="text-lg font-semibold text-foreground">{selectedLeadDetails.name}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">CNPJ</Label>
+                  <p className="text-lg font-semibold text-foreground">{selectedLeadDetails.cnpj}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Setor</Label>
+                  <p className="text-sm text-foreground">{selectedLeadDetails.sector}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Status</Label>
+                  <p className="text-sm text-foreground">{selectedLeadDetails.status}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Temperatura</Label>
+                  <Badge 
+                    className={`${selectedLeadDetails.temp === "hot" ? "bg-destructive/20 text-destructive border-destructive" : selectedLeadDetails.temp === "warm" ? "bg-warning/20 text-warning border-warning" : "bg-info/20 text-info border-info"} border mt-1`}
+                  >
+                    {selectedLeadDetails.temp === "hot" && "🔥 Quente"}
+                    {selectedLeadDetails.temp === "warm" && "🌡️ Morno"}
+                    {selectedLeadDetails.temp === "cold" && "❄️ Frio"}
+                  </Badge>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Score AI</Label>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="flex-1 bg-muted rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full ${selectedLeadDetails.score >= 80 ? "bg-destructive" : selectedLeadDetails.score >= 50 ? "bg-warning" : "bg-info"}`}
+                        style={{ width: `${selectedLeadDetails.score}%` }}
+                      />
+                    </div>
+                    <p className="text-sm font-bold text-primary">{selectedLeadDetails.score}</p>
+                  </div>
+                </div>
+              </div>
+
+              {selectedLeadDetails.phone && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Telefone</Label>
+                  <p className="text-sm text-foreground">{selectedLeadDetails.phone}</p>
+                </div>
+              )}
+
+              {selectedLeadDetails.email && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Email</Label>
+                  <p className="text-sm text-foreground">{selectedLeadDetails.email}</p>
+                </div>
+              )}
+
+              {selectedLeadDetails.partners && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Sócios</Label>
+                  <p className="text-sm text-foreground">{selectedLeadDetails.partners}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-4 border-t">
+                <Button 
+                  className="flex-1 bg-success hover:bg-success/90"
+                  onClick={() => {
+                    toast.success(`Mensagem enviada para ${selectedLeadDetails.name}`);
+                    setSelectedLeadDetails(null);
+                  }}
+                >
+                  <MessageCircle className="w-4 h-4 mr-2" />
+                  Enviar Mensagem
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
